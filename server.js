@@ -6,9 +6,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// CONFIG API
+// ======================
+// 🔧 CONFIG API
+// ======================
 const API_BASE = "https://api.chiptunepro.com/api/v1";
-const API_KEY = "b1748861-3aec-466c-a042-ccf57a8b748b"; // 🔴 remplace
+const API_KEY = process.env.API_KEY; // ✅ IMPORTANT (Render)
 
 const headers = {
   Authorization: `Bearer ${API_KEY}`,
@@ -29,6 +31,28 @@ async function callAPI(endpoint) {
 }
 
 // ======================
+// 🖼️ PROXY LOGOS (FIX IMAGES)
+// ======================
+app.get("/api/logo/:file", async (req, res) => {
+  try {
+    const file = req.params.file;
+
+    const response = await axios.get(
+      `https://chiptunepro.com/uploads/logos/${file}`,
+      {
+        responseType: "arraybuffer",
+      }
+    );
+
+    res.set("Content-Type", response.headers["content-type"]);
+    res.send(response.data);
+  } catch (err) {
+    console.error("LOGO ERROR:", err.message);
+    res.status(404).send("Image not found");
+  }
+});
+
+// ======================
 // 🚗 ROUTES API
 // ======================
 
@@ -37,7 +61,7 @@ app.get("/api/brands", async (req, res) => {
   try {
     const data = await callAPI("/brands");
     res.json(data);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Erreur récupération marques" });
   }
 });
@@ -45,10 +69,10 @@ app.get("/api/brands", async (req, res) => {
 // MODELS
 app.get("/api/models/:brand", async (req, res) => {
   try {
-    const brand = req.params.brand;
+    const brand = encodeURIComponent(req.params.brand);
     const data = await callAPI(`/models/${brand}`);
     res.json(data);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Erreur récupération modèles" });
   }
 });
@@ -56,13 +80,12 @@ app.get("/api/models/:brand", async (req, res) => {
 // YEARS
 app.get("/api/years/:brand/:model", async (req, res) => {
   try {
-    const { brand, model } = req.params;
+    const brand = encodeURIComponent(req.params.brand);
+    const model = encodeURIComponent(req.params.model);
 
-    const encodedModel = encodeURIComponent(model);
-
-    const data = await callAPI(`/years/${brand}/${encodedModel}`);
+    const data = await callAPI(`/years/${brand}/${model}`);
     res.json(data);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Erreur récupération années" });
   }
 });
@@ -70,13 +93,12 @@ app.get("/api/years/:brand/:model", async (req, res) => {
 // ENGINES
 app.get("/api/engines/:model/:year", async (req, res) => {
   try {
-    const { model, year } = req.params;
+    const model = encodeURIComponent(req.params.model);
+    const year = req.params.year;
 
-    const encodedModel = encodeURIComponent(model);
-
-    const data = await callAPI(`/engines/${encodedModel}/${year}`);
+    const data = await callAPI(`/engines/${model}/${year}`);
     res.json(data);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Erreur récupération moteurs" });
   }
 });
@@ -85,10 +107,9 @@ app.get("/api/engines/:model/:year", async (req, res) => {
 app.get("/api/powers/:id", async (req, res) => {
   try {
     const id = req.params.id;
-
     const data = await callAPI(`/powers/${id}`);
     res.json(data);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Erreur récupération puissance" });
   }
 });
@@ -96,6 +117,8 @@ app.get("/api/powers/:id", async (req, res) => {
 // ======================
 // 🚀 START SERVER
 // ======================
-app.listen(5000, () => {
-  console.log("✅ API running on http://localhost:5000");
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`✅ API running on port ${PORT}`);
 });
