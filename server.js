@@ -33,23 +33,33 @@ async function callAPI(endpoint) {
 // ======================
 // 🖼️ PROXY LOGOS (FIX IMAGES)
 // ======================
+// AJOUTE ÇA DANS server.js
 app.get("/api/logo/:file", async (req, res) => {
-  try {
-    const file = req.params.file;
+  const file = req.params.file;
 
-    const response = await axios.get(
-      `https://chiptunepro.com/uploads/logos/${file}`,
-      {
+  const urls = [
+    `https://api.chiptunepro.com/uploads/logos/${file}`,
+    `https://chiptunepro.com/uploads/logos/${file}`,
+  ];
+
+  for (let url of urls) {
+    try {
+      const response = await axios.get(url, {
         responseType: "arraybuffer",
-      }
-    );
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          "Referer": "https://chiptunepro.com/",
+        },
+      });
 
-    res.set("Content-Type", response.headers["content-type"]);
-    res.send(response.data);
-  } catch (err) {
-    console.error("LOGO ERROR:", err.message);
-    res.status(404).send("Image not found");
+      res.set("Content-Type", response.headers["content-type"]);
+      return res.send(response.data);
+    } catch (err) {
+      console.log("fail:", url);
+    }
   }
+
+  res.status(404).send("Image not found");
 });
 
 // ======================
