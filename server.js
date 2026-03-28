@@ -28,17 +28,68 @@ const SMTP_PASS = (process.env.SMTP_PASS || "").replace(/\s+/g, "");
 const EMAIL_FROM = (process.env.EMAIL_FROM || SMTP_USER || CONTACT_EMAIL).trim();
 const hasEmailConfig = Boolean(SMTP_USER && SMTP_PASS);
 
-const transporter = hasEmailConfig
-  ? nodemailer.createTransport({
+function getSmtpConfigs() {
+  if (!hasEmailConfig) return [];
+
+  const configs = [
+    {
       host: SMTP_HOST,
       port: SMTP_PORT,
       secure: SMTP_SECURE,
-      auth: {
-        user: SMTP_USER,
-        pass: SMTP_PASS,
+      label: `${SMTP_HOST}:${SMTP_PORT} secure=${SMTP_SECURE}`,
+    },
+  ];
+
+  if (/smtp\.gmail\.com$/i.test(SMTP_HOST)) {
+    configs.push(
+      {
+        host: SMTP_HOST,
+        port: 465,
+        secure: true,
+        label: `${SMTP_HOST}:465 secure=true`,
       },
-    })
-  : null;
+      {
+        host: SMTP_HOST,
+        port: 587,
+        secure: false,
+        label: `${SMTP_HOST}:587 secure=false`,
+      }
+    );
+  }
+
+  return configs.filter(
+    (config, index, allConfigs) =>
+      index ===
+      allConfigs.findIndex(
+        (candidate) =>
+          candidate.host === config.host &&
+          candidate.port === config.port &&
+          candidate.secure === config.secure
+      )
+  );
+}
+
+const smtpConfigs = getSmtpConfigs();
+
+function createTransport(config) {
+  return nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    requireTLS: !config.secure,
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+    },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
+    tls: {
+      servername: config.host,
+      minVersion: "TLSv1.2",
+    },
+  });
+}
 
 function escapeHtml(value = "") {
   return String(value)
@@ -82,6 +133,65 @@ function getEmailErrorMessage(error) {
   }
 
   return combinedMessage || "Erreur lors de l'envoi du mail.";
+}
+
+function getTransportDebug(config, error) {
+  return {
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    code: error?.code,
+    responseCode: error?.responseCode,
+    command: error?.command,
+    message: error?.message,
+    response: error?.response,
+  };
+}
+
+async function verifySmtpConnection() {
+  let lastError = null;
+
+  for (const config of smtpConfigs) {
+    const transport = createTransport(config);
+
+    try {
+      await transport.verify();
+      console.log("SMTP READY:", config.label);
+      return true;
+    } catch (error) {
+      lastError = error;
+      console.error("SMTP VERIFY ERROR:", getTransportDebug(config, error));
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  throw new Error("Aucune configuration SMTP testee.");
+}
+
+async function sendMailWithFallback(mailOptions) {
+  let lastError = null;
+
+  for (const config of smtpConfigs) {
+    const transport = createTransport(config);
+
+    try {
+      const result = await transport.sendMail(mailOptions);
+      console.log("SMTP SEND OK:", config.label);
+      return result;
+    } catch (error) {
+      lastError = error;
+      console.error("SMTP SEND ERROR:", getTransportDebug(config, error));
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  throw new Error("Aucune configuration SMTP testee.");
 }
 
 // ======================
@@ -203,6 +313,12 @@ app.get("/api/send-email", (req, res) => {
     hasSmtpPass: Boolean(SMTP_PASS),
     emailFrom: EMAIL_FROM,
     contactEmail: CONTACT_EMAIL,
+    smtpConfigs: smtpConfigs.map(({ host, port, secure, label }) => ({
+      host,
+      port,
+      secure,
+      label,
+    })),
   });
 });
 
@@ -232,14 +348,14 @@ app.post("/api/send-email", async (req, res) => {
     });
   }
 
-  if (!hasEmailConfig || !transporter) {
+  if (!hasEmailConfig || smtpConfigs.length === 0) {
     return res.status(500).json({
       error: "Configuration email incomplete cote serveur. Renseigne SMTP_USER et SMTP_PASS sur Render.",
     });
   }
 
   try {
-    await transporter.sendMail({
+    await sendMailWithFallback({
       from: `"NoxReprog Site" <${EMAIL_FROM}>`,
       to: CONTACT_EMAIL,
       replyTo: email,
@@ -292,25 +408,22 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {
   console.log(`✅ API running on port ${PORT}`);
   console.log("EMAIL CONFIG:", {
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_SECURE,
     hasUser: Boolean(SMTP_USER),
     hasPass: Boolean(SMTP_PASS),
     from: EMAIL_FROM,
     to: CONTACT_EMAIL,
+    smtpConfigs: smtpConfigs.map(({ label }) => label),
   });
 
-  if (!transporter) {
+  if (!hasEmailConfig || smtpConfigs.length === 0) {
     console.warn("EMAIL CONFIG: SMTP_USER or SMTP_PASS missing.");
     return;
   }
 
   try {
-    await transporter.verify();
-    console.log("SMTP READY");
+    await verifySmtpConnection();
   } catch (error) {
-    console.error("SMTP VERIFY ERROR:", {
+    console.error("SMTP VERIFY FINAL ERROR:", {
       code: error?.code,
       responseCode: error?.responseCode,
       command: error?.command,
