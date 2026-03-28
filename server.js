@@ -20,11 +20,17 @@ const headers = {
 };
 
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL || "contact@noxreprog.com";
+const SMTP_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE = String(process.env.SMTP_SECURE || "false") === "true";  
 const SMTP_USER = process.env.SMTP_USER || CONTACT_EMAIL;
-const SMTP_PASS = (process.env.SMTP_PASS || "itki suxi kmgt ybgq").replace(/\s+/g, "");
+const SMTP_PASS = (process.env.SMTP_PASS || "").replace(/\s+/g, "");
+const EMAIL_FROM = process.env.EMAIL_FROM || CONTACT_EMAIL;
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: SMTP_HOST,
+  port: SMTP_PORT,
+  secure: SMTP_SECURE,
   auth: {
     user: SMTP_USER,
     pass: SMTP_PASS,
@@ -178,7 +184,7 @@ app.post("/api/send-email", async (req, res) => {
 
   try {
     await transporter.sendMail({
-      from: `"NoxReprog Site" <${CONTACT_EMAIL}>`,
+      from: `"NoxReprog Site" <${EMAIL_FROM}>`,
       to: CONTACT_EMAIL,
       replyTo: email,
       subject: `Nouvelle demande - ${brand || ""} ${model || ""}`.trim(),
@@ -218,8 +224,15 @@ app.post("/api/send-email", async (req, res) => {
     return res.json({ ok: true });
   } catch (error) {
     console.error("EMAIL ERROR:", error);
+    const detailedMessage =
+      error?.code === "EAUTH"
+        ? "Authentification SMTP refusée. Vérifie SMTP_USER et SMTP_PASS."
+        : error?.code === "ESOCKET"
+          ? "Connexion SMTP impossible. Vérifie SMTP_HOST, SMTP_PORT et SMTP_SECURE."
+          : error?.message || "Erreur lors de l'envoi du mail.";
+
     return res.status(500).json({
-      error: "Erreur lors de l'envoi du mail.",
+      error: detailedMessage,
     });
   }
 });
