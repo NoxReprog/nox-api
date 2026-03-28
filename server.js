@@ -21,7 +21,7 @@ const headers = {
 
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL || "contact@noxreprog.com";
 const SMTP_USER = process.env.SMTP_USER || CONTACT_EMAIL;
-const SMTP_PASS = process.env.SMTP_PASS || "itki suxi kmgt ybgq";
+const SMTP_PASS = (process.env.SMTP_PASS || "itki suxi kmgt ybgq").replace(/\s+/g, "");
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
