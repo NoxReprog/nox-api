@@ -20,6 +20,7 @@ const headers = {
 };
 
 const CONTACT_EMAIL = (process.env.CONTACT_EMAIL || "contact@noxreprog.com").trim();
+const RESEND_API_KEY = (process.env.RESEND_API_KEY || "").trim();
 const SMTP_HOST = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
 const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
 const SMTP_SECURE = String(process.env.SMTP_SECURE || "true").toLowerCase() !== "false";
@@ -27,6 +28,7 @@ const SMTP_USER = (process.env.SMTP_USER || "").trim();
 const SMTP_PASS = (process.env.SMTP_PASS || "").replace(/\s+/g, "");
 const EMAIL_FROM = (process.env.EMAIL_FROM || SMTP_USER || CONTACT_EMAIL).trim();
 const hasEmailConfig = Boolean(SMTP_USER && SMTP_PASS);
+const hasResendConfig = Boolean(RESEND_API_KEY);
 
 function getSmtpConfigs() {
   if (!hasEmailConfig) return [];
@@ -148,6 +150,15 @@ function getTransportDebug(config, error) {
   };
 }
 
+function getResendErrorMessage(error) {
+  return (
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    "Erreur lors de l'envoi via Resend."
+  );
+}
+
 async function verifySmtpConnection() {
   let lastError = null;
 
@@ -171,7 +182,42 @@ async function verifySmtpConnection() {
   throw new Error("Aucune configuration SMTP testee.");
 }
 
+async function sendMailWithResend(mailOptions) {
+  const payload = {
+    from: mailOptions.from,
+    to: Array.isArray(mailOptions.to) ? mailOptions.to : [mailOptions.to],
+    subject: mailOptions.subject,
+    html: mailOptions.html,
+    text: mailOptions.text,
+    reply_to: mailOptions.replyTo,
+  };
+
+  try {
+    const response = await axios.post("https://api.resend.com/emails", payload, {
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 20000,
+    });
+
+    console.log("RESEND SEND OK:", response.data?.id || "sent");
+    return response.data;
+  } catch (error) {
+    console.error("RESEND SEND ERROR:", {
+      status: error?.response?.status,
+      data: error?.response?.data,
+      message: error?.message,
+    });
+    throw new Error(getResendErrorMessage(error));
+  }
+}
+
 async function sendMailWithFallback(mailOptions) {
+  if (hasResendConfig) {
+    return sendMailWithResend(mailOptions);
+  }
+
   let lastError = null;
 
   for (const config of smtpConfigs) {
@@ -308,6 +354,8 @@ app.get("/api/send-email", (req, res) => {
   res.status(405).json({
     ok: false,
     message: "Utilise POST pour envoyer un email.",
+    mailProvider: hasResendConfig ? "resend" : "smtp",
+    hasResendKey: hasResendConfig,
     emailConfigured: hasEmailConfig,
     hasSmtpUser: Boolean(SMTP_USER),
     hasSmtpPass: Boolean(SMTP_PASS),
@@ -348,9 +396,9 @@ app.post("/api/send-email", async (req, res) => {
     });
   }
 
-  if (!hasEmailConfig || smtpConfigs.length === 0) {
+  if (!hasResendConfig && (!hasEmailConfig || smtpConfigs.length === 0)) {
     return res.status(500).json({
-      error: "Configuration email incomplete cote serveur. Renseigne SMTP_USER et SMTP_PASS sur Render.",
+      error: "Configuration email incomplete cote serveur. Renseigne RESEND_API_KEY ou SMTP_USER/SMTP_PASS sur Render.",
     });
   }
 
@@ -408,6 +456,8 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {
   console.log(`✅ API running on port ${PORT}`);
   console.log("EMAIL CONFIG:", {
+    provider: hasResendConfig ? "resend" : "smtp",
+    hasResendKey: hasResendConfig,
     hasUser: Boolean(SMTP_USER),
     hasPass: Boolean(SMTP_PASS),
     from: EMAIL_FROM,
@@ -415,8 +465,13 @@ app.listen(PORT, async () => {
     smtpConfigs: smtpConfigs.map(({ label }) => label),
   });
 
+  if (hasResendConfig) {
+    console.log("EMAIL CONFIG: Resend enabled.");
+    return;
+  }
+
   if (!hasEmailConfig || smtpConfigs.length === 0) {
-    console.warn("EMAIL CONFIG: SMTP_USER or SMTP_PASS missing.");
+    console.warn("EMAIL CONFIG: RESEND_API_KEY missing, and SMTP_USER or SMTP_PASS missing.");
     return;
   }
 
