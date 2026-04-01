@@ -463,7 +463,6 @@ app.post("/api/send-email", async (req, res) => {
         `Puissance: ${originalPower || 0} -> ${tunedPower || 0} cv`,
         `Couple: ${originalTorque || 0} -> ${tunedTorque || 0} Nm`,
         `Prix: ${price || 0} EUR`,
-        `Source: ${source || "site"}`,
         "",
         "Message:",
         trimmedMessage || "Aucun message",
@@ -489,7 +488,6 @@ app.post("/api/send-email", async (req, res) => {
         <p><strong>Puissance :</strong> ${escapeHtml(`${originalPower || 0} -> ${tunedPower || 0} cv`)}</p>
         <p><strong>Couple :</strong> ${escapeHtml(`${originalTorque || 0} -> ${tunedTorque || 0} Nm`)}</p>
         <p><strong>Prix :</strong> ${escapeHtml(`${price || 0} EUR`)}</p>
-        <p><strong>Source :</strong> ${escapeHtml(source || "site")}</p>
         <hr />
         <p><strong>Message :</strong></p>
         <p>${escapeHtml(trimmedMessage || "Aucun message").replace(/\n/g, "<br />")}</p>
