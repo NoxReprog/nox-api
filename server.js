@@ -414,14 +414,16 @@ app.post("/api/send-email", async (req, res) => {
       .join(" ");
   const contactName =
     [derivedFirstName, derivedLastName].filter(Boolean).join(" ") || trimmedName;
-  const subjectSuffix =
-    trimmedVehicle ||
-    [brand, model].filter(Boolean).join(" ") ||
-    contactName ||
-    "Contact";
-  const emailSubject = stage
-    ? `Nouvelle demande - ${subjectSuffix}`.trim()
-    : `Nouveau message contact - ${subjectSuffix}`.trim();
+  const isSimpleContact = source === "contact-modal";
+  const subjectSuffix = isSimpleContact
+    ? contactName || "Contact"
+    : trimmedVehicle ||
+      [brand, model].filter(Boolean).join(" ") ||
+      contactName ||
+      "Contact";
+  const emailSubject = isSimpleContact
+    ? `Nouveau message contact - ${subjectSuffix}`.trim()
+    : `Nouvelle demande - ${subjectSuffix}`.trim();
 
   if (!contactName || !trimmedEmail) {
     return res.status(400).json({
@@ -435,14 +437,22 @@ app.post("/api/send-email", async (req, res) => {
     });
   }
 
-  try {
-    await sendMailWithFallback({
-      from: `"NoxReprog Site" <${EMAIL_FROM}>`,
-      to: CONTACT_EMAIL,
-      replyTo: trimmedEmail,
-      subject: emailSubject,
-      text: [
-        "Nouvelle demande NoxReprog",
+  const mailTitle = isSimpleContact
+    ? "Nouveau message de contact"
+    : "Nouvelle demande NoxReprog";
+  const mailText = isSimpleContact
+    ? [
+        mailTitle,
+        "",
+        `Nom: ${contactName}`,
+        `Email: ${trimmedEmail}`,
+        `Véhicule: ${trimmedVehicle || "Non renseigné"}`,
+        "",
+        "Message:",
+        trimmedMessage || "Aucun message",
+      ].join("\n")
+    : [
+        mailTitle,
         "",
         `Nom: ${contactName}`,
         `Email: ${trimmedEmail}`,
@@ -457,9 +467,19 @@ app.post("/api/send-email", async (req, res) => {
         "",
         "Message:",
         trimmedMessage || "Aucun message",
-      ].join("\n"),
-      html: `
-        <h2>Nouvelle demande NoxReprog</h2>
+      ].join("\n");
+  const mailHtml = isSimpleContact
+    ? `
+        <h2>${escapeHtml(mailTitle)}</h2>
+        <p><strong>Nom :</strong> ${escapeHtml(contactName)}</p>
+        <p><strong>Email :</strong> ${escapeHtml(trimmedEmail)}</p>
+        <p><strong>Véhicule :</strong> ${escapeHtml(trimmedVehicle || "Non renseigné")}</p>
+        <hr />
+        <p><strong>Message :</strong></p>
+        <p>${escapeHtml(trimmedMessage || "Aucun message").replace(/\n/g, "<br />")}</p>
+      `
+    : `
+        <h2>${escapeHtml(mailTitle)}</h2>
         <p><strong>Nom :</strong> ${escapeHtml(contactName)}</p>
         <p><strong>Email :</strong> ${escapeHtml(trimmedEmail)}</p>
         <p><strong>Téléphone :</strong> ${escapeHtml(trimmedPhone || "Non renseigné")}</p>
@@ -473,7 +493,16 @@ app.post("/api/send-email", async (req, res) => {
         <hr />
         <p><strong>Message :</strong></p>
         <p>${escapeHtml(trimmedMessage || "Aucun message").replace(/\n/g, "<br />")}</p>
-      `,
+      `;
+
+  try {
+    await sendMailWithFallback({
+      from: `"NoxReprog Site" <${EMAIL_FROM}>`,
+      to: CONTACT_EMAIL,
+      replyTo: trimmedEmail,
+      subject: emailSubject,
+      text: mailText,
+      html: mailHtml,
     });
 
     return res.json({ ok: true });
