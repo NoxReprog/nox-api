@@ -374,6 +374,7 @@ app.post("/api/send-email", async (req, res) => {
   const {
     firstName,
     lastName,
+    name,
     email,
     phone,
     message,
@@ -388,11 +389,43 @@ app.post("/api/send-email", async (req, res) => {
     tunedPower,
     tunedTorque,
     price,
+    car,
+    source,
   } = req.body;
 
-  if (!firstName || !lastName || !email) {
+  const trimmedFirstName = (firstName || "").trim();
+  const trimmedLastName = (lastName || "").trim();
+  const trimmedName = (name || "").trim();
+  const trimmedEmail = (email || "").trim();
+  const trimmedPhone = (phone || "").trim();
+  const trimmedMessage = (message || "").trim();
+  const trimmedVehicle =
+    (vehicle || "").trim() ||
+    (car || "").trim() ||
+    [brand, model, year].filter(Boolean).join(" - ");
+  const derivedFirstName =
+    trimmedFirstName || trimmedName.split(/\s+/).filter(Boolean)[0] || "";
+  const derivedLastName =
+    trimmedLastName ||
+    trimmedName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(1)
+      .join(" ");
+  const contactName =
+    [derivedFirstName, derivedLastName].filter(Boolean).join(" ") || trimmedName;
+  const subjectSuffix =
+    trimmedVehicle ||
+    [brand, model].filter(Boolean).join(" ") ||
+    contactName ||
+    "Contact";
+  const emailSubject = stage
+    ? `Nouvelle demande - ${subjectSuffix}`.trim()
+    : `Nouveau message contact - ${subjectSuffix}`.trim();
+
+  if (!contactName || !trimmedEmail) {
     return res.status(400).json({
-      error: "Prénom, nom et email sont obligatoires.",
+      error: "Nom et email sont obligatoires.",
     });
   }
 
@@ -406,38 +439,40 @@ app.post("/api/send-email", async (req, res) => {
     await sendMailWithFallback({
       from: `"NoxReprog Site" <${EMAIL_FROM}>`,
       to: CONTACT_EMAIL,
-      replyTo: email,
-      subject: `Nouvelle demande - ${brand || ""} ${model || ""}`.trim(),
+      replyTo: trimmedEmail,
+      subject: emailSubject,
       text: [
         "Nouvelle demande NoxReprog",
         "",
-        `Nom: ${firstName} ${lastName}`,
-        `Email: ${email}`,
-        `Téléphone: ${phone || "Non renseigné"}`,
-        `Véhicule: ${vehicle || [brand, model, year].filter(Boolean).join(" - ")}`,
+        `Nom: ${contactName}`,
+        `Email: ${trimmedEmail}`,
+        `Téléphone: ${trimmedPhone || "Non renseigné"}`,
+        `Véhicule: ${trimmedVehicle || "Non renseigné"}`,
         `Motorisation: ${engine || "Non renseignée"}`,
         `Stage: ${stage || "Non renseigné"}`,
         `Puissance: ${originalPower || 0} -> ${tunedPower || 0} cv`,
         `Couple: ${originalTorque || 0} -> ${tunedTorque || 0} Nm`,
         `Prix: ${price || 0} EUR`,
+        `Source: ${source || "site"}`,
         "",
         "Message:",
-        message || "Aucun message",
+        trimmedMessage || "Aucun message",
       ].join("\n"),
       html: `
         <h2>Nouvelle demande NoxReprog</h2>
-        <p><strong>Nom :</strong> ${escapeHtml(`${firstName} ${lastName}`)}</p>
-        <p><strong>Email :</strong> ${escapeHtml(email)}</p>
-        <p><strong>Téléphone :</strong> ${escapeHtml(phone || "Non renseigné")}</p>
-        <p><strong>Véhicule :</strong> ${escapeHtml(vehicle || [brand, model, year].filter(Boolean).join(" - "))}</p>
+        <p><strong>Nom :</strong> ${escapeHtml(contactName)}</p>
+        <p><strong>Email :</strong> ${escapeHtml(trimmedEmail)}</p>
+        <p><strong>Téléphone :</strong> ${escapeHtml(trimmedPhone || "Non renseigné")}</p>
+        <p><strong>Véhicule :</strong> ${escapeHtml(trimmedVehicle || "Non renseigné")}</p>
         <p><strong>Motorisation :</strong> ${escapeHtml(engine || "Non renseignée")}</p>
         <p><strong>Stage :</strong> ${escapeHtml(stage || "Non renseigné")}</p>
         <p><strong>Puissance :</strong> ${escapeHtml(`${originalPower || 0} -> ${tunedPower || 0} cv`)}</p>
         <p><strong>Couple :</strong> ${escapeHtml(`${originalTorque || 0} -> ${tunedTorque || 0} Nm`)}</p>
         <p><strong>Prix :</strong> ${escapeHtml(`${price || 0} EUR`)}</p>
+        <p><strong>Source :</strong> ${escapeHtml(source || "site")}</p>
         <hr />
         <p><strong>Message :</strong></p>
-        <p>${escapeHtml(message || "Aucun message").replace(/\n/g, "<br />")}</p>
+        <p>${escapeHtml(trimmedMessage || "Aucun message").replace(/\n/g, "<br />")}</p>
       `,
     });
 
